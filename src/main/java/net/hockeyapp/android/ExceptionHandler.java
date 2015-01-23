@@ -56,73 +56,96 @@ public class ExceptionHandler implements UncaughtExceptionHandler {
   private boolean ignoreDefaultHandler = false;
   private CrashManagerListener listener;
   private UncaughtExceptionHandler defaultExceptionHandler;
+    /**
+     * App identifier from HockeyApp.
+     */
+    private static String identifier = null;
 
-  public ExceptionHandler(UncaughtExceptionHandler defaultExceptionHandler, CrashManagerListener listener, boolean ignoreDefaultHandler) {
+  public ExceptionHandler(UncaughtExceptionHandler defaultExceptionHandler,
+                          CrashManagerListener listener,
+                          String inIdentifier,
+                          boolean ignoreDefaultHandler) {
     this.defaultExceptionHandler = defaultExceptionHandler;
     this.ignoreDefaultHandler = ignoreDefaultHandler;
     this.listener = listener;
+    this.identifier = inIdentifier;
   }
 
   public void setListener(CrashManagerListener listener) {
     this.listener = listener;
   }
   
-  public static void saveException(Throwable exception, CrashManagerListener listener) {
-    final Date now = new Date();
-    final Writer result = new StringWriter();
-    final PrintWriter printWriter = new PrintWriter(result);
-
-    exception.printStackTrace(printWriter);
+  public static void saveException(Throwable exception, CrashManagerListener listener, String inAppIdentifier) {
 
     try {
       // Create filename from a random uuid
       String filename = UUID.randomUUID().toString();
-      String path = Constants.FILES_PATH + "/" + filename + ".stacktrace";
+      String path = Constants.FILES_PATH + "/" + filename + ConstantsFiles.FILE_STACKTRACE;
       Log.d(Constants.TAG, "Writing unhandled exception to: " + path);
       
       // Write the stacktrace to disk
       BufferedWriter write = new BufferedWriter(new FileWriter(path));
-      
-      // HockeyApp expects the package name in the first line!
-      write.write("Package: " + Constants.APP_PACKAGE + "\n");
-      write.write("Version Code: " + Constants.APP_VERSION + "\n");
-      write.write("Version Name: " + Constants.APP_VERSION_NAME + "\n");
-      
-      if ((listener == null) || (listener.includeDeviceData())) {
-        write.write("Android: " + Constants.ANDROID_VERSION + "\n");
-        write.write("Manufacturer: " + Constants.PHONE_MANUFACTURER + "\n");
-        write.write("Model: " + Constants.PHONE_MODEL + "\n");
-      }
-      
-      if (Constants.CRASH_IDENTIFIER != null && (listener == null || listener.includeDeviceIdentifier())) {
-        write.write("CrashReporter Key: " + Constants.CRASH_IDENTIFIER + "\n");
-      }
-      
-      write.write("Date: " + now + "\n");
-      write.write("\n");
-      write.write(result.toString());
+
+      String exceptionString = generateExceptionString(exception, listener);
+
+      write.write(exceptionString);
+
       write.flush();
       write.close();
       
       if (listener != null) {
-        writeValueToFile(limitedString(listener.getUserID()), filename + ".user");
-        writeValueToFile(limitedString(listener.getContact()), filename + ".contact");
-        writeValueToFile(listener.getDescription(), filename + ".description");
+        writeValueToFile(limitedString(listener.getUserID()), filename + ConstantsFiles.FILE_USER);
+        writeValueToFile(limitedString(listener.getContact()), filename + ConstantsFiles.FILE_CONTACT);
+        writeValueToFile(listener.getDescription(), filename + ConstantsFiles.FILE_DESCRIPTION);
+      }
+      if (inAppIdentifier != null)
+      {
+          writeValueToFile(inAppIdentifier, filename + ConstantsFiles.FILE_APPIDENTIFIER);
       }
     } 
     catch (Exception another) {
       Log.e(Constants.TAG, "Error saving exception stacktrace!\n", another);
     }
   }
-  
-  public void uncaughtException(Thread thread, Throwable exception) {
+
+    public static String generateExceptionString(Throwable inException, CrashManagerListener inListener) {
+        final Date now = new Date();
+        final Writer result = new StringWriter();
+        final PrintWriter printWriter = new PrintWriter(result);
+
+        inException.printStackTrace(printWriter);
+
+        String out = "";
+        // HockeyApp expects the package name in the first line!
+        out += "Package: " + Constants.APP_PACKAGE + "\n";
+        out += "Version Code: " + Constants.APP_VERSION + "\n";
+        out += "Version Name: " + Constants.APP_VERSION_NAME + "\n";
+
+        if ((inListener == null) || (inListener.includeDeviceData())) {
+            out += "Android: " + Constants.ANDROID_VERSION + "\n";
+            out += "Manufacturer: " + Constants.PHONE_MANUFACTURER + "\n";
+            out += "Model: " + Constants.PHONE_MODEL + "\n";
+        }
+
+        if (Constants.CRASH_IDENTIFIER != null && (inListener == null || inListener.includeDeviceIdentifier())) {
+            out += "CrashReporter Key: " + Constants.CRASH_IDENTIFIER + "\n";
+        }
+
+        out += "Date: " + now + "\n";
+        out += "\n";
+        out += result.toString();
+
+        return out;
+    }
+
+    public void uncaughtException(Thread thread, Throwable exception) {
     if (Constants.FILES_PATH == null) {
       // If the files path is null, the exception can't be stored
       // Always call the default handler instead
       defaultExceptionHandler.uncaughtException(thread, exception);
     }
     else {
-      saveException(exception, listener);
+      saveException(exception, listener, identifier);
 
       if (!ignoreDefaultHandler) {
         defaultExceptionHandler.uncaughtException(thread, exception);

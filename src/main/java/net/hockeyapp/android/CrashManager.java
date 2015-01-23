@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-
 import android.preference.PreferenceManager;
 import net.hockeyapp.android.utils.ConnectionManager;
 import net.hockeyapp.android.utils.PrefsUtil;
@@ -71,11 +70,12 @@ import android.util.Log;
  * @author Thomas Dohmke
  **/
 public class CrashManager {
+
   /**
    * App identifier from HockeyApp.
    */
-  private static String identifier = null;
-  
+  private static String identifierCaughtExceptions = null;
+
   /**
    * URL of HockeyApp service.
    */
@@ -97,8 +97,10 @@ public class CrashManager {
    * @param context The context to use. Usually your Activity object.
    * @param appIdentifier App ID of your app on HockeyApp.
    */
-  public static void register(Context context, String appIdentifier) {
-    register(context, Constants.BASE_URL, appIdentifier, null);
+  public static void register(Context context,
+                              String inIdentifierCaughtExceptions,
+                              String appIdentifier) {
+    register(context, Constants.BASE_URL, appIdentifier, inIdentifierCaughtExceptions, null);
   }
 
   /**
@@ -108,8 +110,11 @@ public class CrashManager {
    * @param appIdentifier App ID of your app on HockeyApp.
    * @param listener Implement for callback functions.
    */
-  public static void register(Context context, String appIdentifier, CrashManagerListener listener) {
-    register(context, Constants.BASE_URL, appIdentifier, listener);
+  public static void register(Context context,
+                              String appIdentifier,
+                              String inIdentifierCaughtExceptions,
+                              CrashManagerListener listener) {
+    register(context, Constants.BASE_URL, appIdentifier, inIdentifierCaughtExceptions, listener);
   }
 
   /**
@@ -120,9 +125,13 @@ public class CrashManager {
    * @param appIdentifier App ID of your app on HockeyApp.
    * @param listener Implement for callback functions.
    */
-  public static void register(Context context, String urlString, String appIdentifier, CrashManagerListener listener) {
-    initialize(context, urlString, appIdentifier, listener, false);
-    execute(context, listener);
+  public static void register(Context context,
+                              String urlString,
+                              String appIdentifier,
+                              String inIdentifierCaughtExceptions,
+                              CrashManagerListener listener) {
+    initialize(context, urlString, appIdentifier, inIdentifierCaughtExceptions, listener, false);
+    execute(context, listener, appIdentifier);
   }
 
   /**
@@ -135,8 +144,11 @@ public class CrashManager {
    * @param appIdentifier App ID of your app on HockeyApp.
    * @param listener Implement for callback functions.
    */
-  public static void initialize(Context context, String appIdentifier, CrashManagerListener listener) {
-    initialize(context, Constants.BASE_URL, appIdentifier, listener, true);
+  public static void initialize(Context context,
+                                String appIdentifier,
+                                String inIdentifierCaughtExceptions,
+                                CrashManagerListener listener) {
+    initialize(context, Constants.BASE_URL, appIdentifier, inIdentifierCaughtExceptions, listener, true);
   }
 
   /**
@@ -150,8 +162,12 @@ public class CrashManager {
    * @param appIdentifier App ID of your app on HockeyApp.
    * @param listener Implement for callback functions.
    */
-  public static void initialize(Context context, String urlString, String appIdentifier, CrashManagerListener listener) {
-    initialize(context, urlString, appIdentifier, listener, true);
+  public static void initialize(Context context,
+                                String urlString,
+                                String appIdentifier,
+                                String inIdentifierCaughtExceptions,
+                                CrashManagerListener listener) {
+    initialize(context, urlString, appIdentifier, inIdentifierCaughtExceptions, listener, true);
   }
 
   /**
@@ -162,7 +178,8 @@ public class CrashManager {
    * @param listener Implement for callback functions.
    */
   @SuppressWarnings("deprecation")
-  public static void execute(Context context, CrashManagerListener listener) {
+  public static void execute(Context context, CrashManagerListener listener,
+                             String inAppIdentifier) {
     Boolean ignoreDefaultHandler = (listener != null) && (listener.ignoreDefaultHandler());
     WeakReference<Context> weakContext = new WeakReference<Context>(context);
     
@@ -180,10 +197,10 @@ public class CrashManager {
       }
       
       if (!autoSend) {
-        showDialog(weakContext, listener, ignoreDefaultHandler);
+        showDialog(weakContext, listener, inAppIdentifier, ignoreDefaultHandler);
       }
       else {
-        sendCrashes(weakContext, listener, ignoreDefaultHandler);
+        sendCrashes(weakContext, listener, inAppIdentifier, ignoreDefaultHandler);
       }
     }
     else if (foundOrSend == 2) {
@@ -191,10 +208,10 @@ public class CrashManager {
         listener.onConfirmedCrashesFound();
       }
       
-      sendCrashes(weakContext, listener, ignoreDefaultHandler);
+      sendCrashes(weakContext, listener, inAppIdentifier, ignoreDefaultHandler);
     }
     else {
-      registerHandler(weakContext, listener, ignoreDefaultHandler);
+      registerHandler(listener, inAppIdentifier, ignoreDefaultHandler);
     }
   }
   
@@ -250,7 +267,9 @@ public class CrashManager {
    * @param weakContext The context to use. Usually your Activity object.
    * @param listener Implement for callback functions.
    */
-  public static void submitStackTraces(WeakReference<Context> weakContext, CrashManagerListener listener) {
+  public static void submitStackTraces(WeakReference<Context> weakContext,
+                                       CrashManagerListener listener,
+                                       String inAppIdentifier) {
     String[] list = searchForStackTraces();
     Boolean successful = false;
 
@@ -263,22 +282,16 @@ public class CrashManager {
           String filename = list[index];
           String stacktrace = contentsOfFile(weakContext, filename);
           if (stacktrace.length() > 0) {
-            // Transmit stack trace with POST request
-            Log.d(Constants.TAG, "Transmitting crash data: \n" + stacktrace);
-            DefaultHttpClient httpClient = (DefaultHttpClient)ConnectionManager.getInstance().getHttpClient();
-            HttpPost httpPost = new HttpPost(getURLString());
-            
-            List <NameValuePair> parameters = new ArrayList <NameValuePair>(); 
-            parameters.add(new BasicNameValuePair("raw", stacktrace));
-            parameters.add(new BasicNameValuePair("userID", contentsOfFile(weakContext, filename.replace(".stacktrace", ".user"))));
-            parameters.add(new BasicNameValuePair("contact", contentsOfFile(weakContext, filename.replace(".stacktrace", ".contact"))));
-            parameters.add(new BasicNameValuePair("description", contentsOfFile(weakContext, filename.replace(".stacktrace", ".description"))));
-            parameters.add(new BasicNameValuePair("sdk", Constants.SDK_NAME));
-            parameters.add(new BasicNameValuePair("sdk_version", Constants.SDK_VERSION));
-            
-            httpPost.setEntity(new UrlEncodedFormEntity(parameters, HTTP.UTF_8));
-            
-            httpClient.execute(httpPost);   
+              String appidentifier = contentsOfFile(weakContext, filename.replace(ConstantsFiles.FILE_STACKTRACE, ConstantsFiles.FILE_APPIDENTIFIER));
+              if (appidentifier == null || (appidentifier.length() == 0) )
+              {
+                  appidentifier = inAppIdentifier;
+              }
+              submitStackTrace(appidentifier,
+                      stacktrace,
+                      contentsOfFile(weakContext, filename.replace(ConstantsFiles.FILE_STACKTRACE, ConstantsFiles.FILE_USER)),
+                      contentsOfFile(weakContext, filename.replace(ConstantsFiles.FILE_STACKTRACE, ConstantsFiles.FILE_CONTACT)),
+                      contentsOfFile(weakContext, filename.replace(ConstantsFiles.FILE_STACKTRACE, ConstantsFiles.FILE_DESCRIPTION)));
             successful = true;
           }
         }
@@ -303,9 +316,72 @@ public class CrashManager {
         }
       }
     }
-  } 
+  }
 
-  /**
+    public static void sendCaughtException(final Throwable inThrowable,
+                                           final String inUserId, final String inContact, final String inDescription)
+    {
+        final CrashManagerListener crashManagerListener = new CrashManagerListener() {
+            @Override
+            public String getDescription() {
+                return inDescription;
+            }
+
+            @Override
+            public String getUserID() {
+                return inUserId;
+            }
+
+            @Override
+            public String getContact() {
+                return inContact;
+            }
+        };
+        if (Thread.currentThread().getId() != 1)
+        {
+            try {
+                submitStackTrace(identifierCaughtExceptions, ExceptionHandler.generateExceptionString(inThrowable, crashManagerListener), inUserId, inContact, inDescription);
+            } catch (IOException e) {
+                e.printStackTrace();
+                ExceptionHandler.saveException(inThrowable, crashManagerListener, identifierCaughtExceptions);
+            }
+        }
+        else
+        {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        submitStackTrace(identifierCaughtExceptions, ExceptionHandler.generateExceptionString(inThrowable, crashManagerListener), inUserId, inContact, inDescription);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }).start();
+        }
+    }
+
+    private static void submitStackTrace(String inIdentifier, String inStackTrace,
+                                         String inUserId, String inContact, String inDescription) throws IOException {
+        // Transmit stack trace with POST request
+        Log.d(Constants.TAG, "Transmitting crash data: \n" + inStackTrace);
+        DefaultHttpClient httpClient = (DefaultHttpClient)ConnectionManager.getInstance().getHttpClient();
+        HttpPost httpPost = new HttpPost(getURLString(inIdentifier));
+
+        List <NameValuePair> parameters = new ArrayList <NameValuePair>();
+        parameters.add(new BasicNameValuePair("raw", inStackTrace));
+        parameters.add(new BasicNameValuePair("userID", inUserId));
+        parameters.add(new BasicNameValuePair("contact", inContact));
+        parameters.add(new BasicNameValuePair("description", inDescription));
+        parameters.add(new BasicNameValuePair("sdk", Constants.SDK_NAME));
+        parameters.add(new BasicNameValuePair("sdk_version", Constants.SDK_VERSION));
+
+        httpPost.setEntity(new UrlEncodedFormEntity(parameters, HTTP.UTF_8));
+
+        httpClient.execute(httpPost);
+    }
+
+    /**
    * Deletes all stack traces and meta files from files dir.
    * 
    * @param weakContext The context to use. Usually your Activity object.
@@ -341,21 +417,24 @@ public class CrashManager {
    * additional parameter to decide whether to register the exception handler
    * at the end or not.
    */
-  private static void initialize(Context context, String urlString, String appIdentifier, CrashManagerListener listener, boolean registerHandler) {
+  private static void initialize(Context context, String urlString, String inAppIdentifier,
+                                 String inIdentifierCaughtExceptions,
+                                 CrashManagerListener listener, boolean registerHandler) {
+    identifierCaughtExceptions = inIdentifierCaughtExceptions;
     if (context != null) {
       CrashManager.urlString = urlString;
-      CrashManager.identifier = Util.sanitizeAppIdentifier(appIdentifier);
+      String appIdentifier = Util.sanitizeAppIdentifier(inAppIdentifier);
   
       Constants.loadFromContext(context);
       
-      if (CrashManager.identifier == null) {
-        CrashManager.identifier = Constants.APP_PACKAGE;
+      if (appIdentifier == null) {
+          appIdentifier = Constants.APP_PACKAGE;
       }
       
       if (registerHandler) {
         Boolean ignoreDefaultHandler = (listener != null) && (listener.ignoreDefaultHandler());
         WeakReference<Context> weakContext = new WeakReference<Context>(context); 
-        registerHandler(weakContext, listener, ignoreDefaultHandler);
+        registerHandler(listener, appIdentifier, ignoreDefaultHandler);
       }
     }
   }
@@ -364,7 +443,10 @@ public class CrashManager {
    * Shows a dialog to ask the user whether he wants to send crash reports to 
    * HockeyApp or delete them.
    */
-  private static void showDialog(final WeakReference<Context> weakContext, final CrashManagerListener listener, final boolean ignoreDefaultHandler) {
+  private static void showDialog(final WeakReference<Context> weakContext,
+                                 final CrashManagerListener listener,
+                                 final String inAppIdentifier,
+                                 final boolean ignoreDefaultHandler) {
     Context context = null;
     if (weakContext != null) {
       context = weakContext.get();
@@ -385,7 +467,7 @@ public class CrashManager {
         }
         
         deleteStackTraces(weakContext);
-        registerHandler(weakContext, listener, ignoreDefaultHandler);
+        registerHandler(listener, inAppIdentifier, ignoreDefaultHandler);
       } 
     });
 
@@ -404,13 +486,13 @@ public class CrashManager {
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
             prefs.edit().putBoolean(ALWAYS_SEND_KEY, true).commit();
 
-            sendCrashes(weakContext, listener, ignoreDefaultHandler);
+            sendCrashes(weakContext, listener, inAppIdentifier, ignoreDefaultHandler);
         }
     });
 
     builder.setPositiveButton(Strings.get(listener, Strings.CRASH_DIALOG_POSITIVE_BUTTON_ID), new DialogInterface.OnClickListener() {
       public void onClick(DialogInterface dialog, int which) {
-        sendCrashes(weakContext, listener, ignoreDefaultHandler);
+        sendCrashes(weakContext, listener, inAppIdentifier, ignoreDefaultHandler);
       } 
     });
 
@@ -421,9 +503,12 @@ public class CrashManager {
    * Starts thread to send crashes to HockeyApp, then registers the exception 
    * handler. 
    */
-  private static void sendCrashes(final WeakReference<Context> weakContext, final CrashManagerListener listener, final boolean ignoreDefaultHandler) {
+  private static void sendCrashes(final WeakReference<Context> weakContext,
+                                  final CrashManagerListener listener,
+                                  final String inAppIdentifier,
+                                  final boolean ignoreDefaultHandler) {
     saveConfirmedStackTraces(weakContext);
-    registerHandler(weakContext, listener, ignoreDefaultHandler);
+    registerHandler(listener, inAppIdentifier, ignoreDefaultHandler);
     
     if (!submitting) {
       submitting = true;
@@ -431,7 +516,7 @@ public class CrashManager {
       new Thread() {
         @Override
         public void run() {
-          submitStackTraces(weakContext, listener);
+          submitStackTraces(weakContext, listener, inAppIdentifier);
           submitting = false;
         }
       }.start();
@@ -441,7 +526,9 @@ public class CrashManager {
   /**
    * Registers the exception handler. 
    */
-  private static void registerHandler(WeakReference<Context> weakContext, CrashManagerListener listener, boolean ignoreDefaultHandler) {
+  private static void registerHandler(CrashManagerListener listener,
+                                      String inAppIdentifier,
+                                      boolean ignoreDefaultHandler) {
     if ((Constants.APP_VERSION != null) && (Constants.APP_PACKAGE != null)) {
       // Get current handler
       UncaughtExceptionHandler currentHandler = Thread.getDefaultUncaughtExceptionHandler();
@@ -454,7 +541,8 @@ public class CrashManager {
         ((ExceptionHandler)currentHandler).setListener(listener);
       }
       else {
-        Thread.setDefaultUncaughtExceptionHandler(new ExceptionHandler(currentHandler, listener, ignoreDefaultHandler));
+        Thread.setDefaultUncaughtExceptionHandler(new ExceptionHandler(currentHandler, listener,
+                inAppIdentifier, ignoreDefaultHandler));
       }
     }
     else {
@@ -465,8 +553,8 @@ public class CrashManager {
   /**
    * Returns the complete URL for the HockeyApp API. 
    */
-  private static String getURLString() {
-    return urlString + "api/2/apps/" + identifier + "/crashes/";      
+  private static String getURLString(String inIdentifier) {
+    return urlString + "api/2/apps/" + inIdentifier + "/crashes/";
   }
   
   /**
@@ -480,14 +568,17 @@ public class CrashManager {
       if (context != null) {
         context.deleteFile(filename);
         
-        String user = filename.replace(".stacktrace", ".user");
+        String user = filename.replace(ConstantsFiles.FILE_STACKTRACE, ConstantsFiles.FILE_USER);
         context.deleteFile(user);
         
-        String contact = filename.replace(".stacktrace", ".contact");
+        String contact = filename.replace(ConstantsFiles.FILE_STACKTRACE, ConstantsFiles.FILE_CONTACT);
         context.deleteFile(contact);
         
-        String description = filename.replace(".stacktrace", ".description");
-        context.deleteFile(description);        
+        String description = filename.replace(ConstantsFiles.FILE_STACKTRACE, ConstantsFiles.FILE_DESCRIPTION);
+        context.deleteFile(description);
+
+        String appidentifier = filename.replace(ConstantsFiles.FILE_STACKTRACE, ConstantsFiles.FILE_APPIDENTIFIER);
+        context.deleteFile(appidentifier);
       }
     }
   }
@@ -583,10 +674,10 @@ public class CrashManager {
         return new String[0];
       }
   
-      // Filter for ".stacktrace" files
+      // Filter for ConstantsFiles.FILE_STACKTRACE files
       FilenameFilter filter = new FilenameFilter() { 
         public boolean accept(File dir, String name) {
-          return name.endsWith(".stacktrace"); 
+          return name.endsWith(ConstantsFiles.FILE_STACKTRACE); 
         } 
       }; 
       return dir.list(filter);
