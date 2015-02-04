@@ -98,8 +98,8 @@ public class CrashManager {
    * @param appIdentifier App ID of your app on HockeyApp.
    */
   public static void register(Context context,
-                              String inIdentifierCaughtExceptions,
-                              String appIdentifier) {
+                              String appIdentifier,
+                              String inIdentifierCaughtExceptions) {
     register(context, Constants.BASE_URL, appIdentifier, inIdentifierCaughtExceptions, null);
   }
 
