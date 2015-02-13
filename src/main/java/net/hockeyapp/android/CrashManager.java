@@ -287,6 +287,7 @@ public class CrashManager {
               {
                   appidentifier = inAppIdentifier;
               }
+              appidentifier = appidentifier.replace(System.getProperty("line.separator"), "");
               submitStackTrace(appidentifier,
                       stacktrace,
                       contentsOfFile(weakContext, filename.replace(ConstantsFiles.FILE_STACKTRACE, ConstantsFiles.FILE_USER)),
